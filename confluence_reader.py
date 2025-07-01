@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 import argparse
 import requests
 import base64
@@ -19,6 +20,37 @@ def debug_print(message):
     """Print debug message only if debug mode is enabled"""
     if DEBUG_MODE:
         print(f"DEBUG: {message}")
+
+def describe():
+    """Agent description for orchestrator discovery"""
+    return {
+        "name": "confluence_converter",
+        "description": "Extracts Confluence pages and converts them to LLM-optimized text with embedded image/table processing using OCR",
+        "capabilities": ["extract_confluence_content", "convert_html_to_text", "process_table_images", "ocr_extraction"],
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Confluence page URL (e.g., https://domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title)"
+                },
+                "email": {
+                    "type": "string", 
+                    "description": "Confluence account email (optional if CONFLUENCE_EMAIL env var is set)"
+                },
+                "api_token": {
+                    "type": "string",
+                    "description": "Confluence API token (optional if CONFLUENCE_API_TOKEN env var is set)"
+                },
+                "debug": {
+                    "type": "boolean",
+                    "description": "Enable debug output with detailed processing information",
+                    "default": False
+                }
+            },
+            "required": ["url"]
+        }
+    }
 
 def test_auth(base_url, email, token):
     """Test authentication by getting user info"""
@@ -75,8 +107,7 @@ def get_confluence_content(base_url, page_id, email, token):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching content: {e}")
-        sys.exit(1)
+        raise Exception(f"Error fetching content: {e}")
 
 def download_image(url, auth_header):
     """Download image from URL"""
@@ -234,6 +265,57 @@ def process_confluence_content(content, base_url, auth_header):
     
     return final_content
 
+def run(params):
+    """Main agent execution function"""
+    global DEBUG_MODE
+    DEBUG_MODE = params.get('debug', False)
+    
+    try:
+        # Get credentials
+        email = params.get('email') or os.getenv('CONFLUENCE_EMAIL')
+        token = params.get('api_token') or os.getenv('CONFLUENCE_API_TOKEN')
+        
+        if not email:
+            return {"status": "error", "message": "CONFLUENCE_EMAIL not provided in params or environment variables"}
+        if not token:
+            return {"status": "error", "message": "CONFLUENCE_API_TOKEN not provided in params or environment variables"}
+        
+        # Parse URL
+        url = params['url']
+        parsed_url = urlparse(url)
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        page_id = extract_page_id_from_url(url)
+        
+        # Test authentication
+        if DEBUG_MODE:
+            debug_print("Testing authentication...")
+        if not test_auth(base_url, email, token):
+            return {"status": "error", "message": "Authentication failed. Please check your credentials."}
+        
+        # Fetch content
+        content = get_confluence_content(base_url, page_id, email, token)
+        
+        # Create auth header for image downloads
+        auth_string = f"{email}:{token}"
+        encoded_auth = base64.b64encode(auth_string.encode()).decode()
+        auth_header = f'Basic {encoded_auth}'
+        
+        # Process content
+        processed_content = process_confluence_content(content, base_url, auth_header)
+        
+        return {
+            "status": "success",
+            "title": content['title'],
+            "type": content['type'],
+            "status_field": content['status'],
+            "content": processed_content,
+            "page_id": content['id'],
+            "url": url
+        }
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 def extract_page_id_from_url(url):
     """Extract page ID from Confluence URL"""
     if '/pages/' in url:
@@ -241,58 +323,55 @@ def extract_page_id_from_url(url):
     elif 'pageId=' in url:
         return url.split('pageId=')[-1].split('&')[0]
     else:
-        print("Unable to extract page ID from URL. Please provide a valid Confluence page URL.")
-        sys.exit(1)
+        raise ValueError("Unable to extract page ID from URL. Please provide a valid Confluence page URL.")
 
-def main():
+def legacy_main():
+    """Legacy CLI interface for backward compatibility"""
     parser = argparse.ArgumentParser(description='Fetch and print Confluence page content')
     parser.add_argument('url', help='Confluence page URL')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     
     args = parser.parse_args()
-    global DEBUG_MODE
-    DEBUG_MODE = args.debug
     
-    # Get email and API token from environment variables
-    email = os.getenv('CONFLUENCE_EMAIL')
-    token = os.getenv('CONFLUENCE_API_TOKEN')
+    # Convert to new format and run
+    params = {
+        'url': args.url,
+        'debug': args.debug
+    }
     
-    if not email:
-        print("Error: CONFLUENCE_EMAIL environment variable not set")
+    result = run(params)
+    
+    if result['status'] == 'success':
+        print(f"# {result['title']}")
+        print(f"**Type:** {result['type']}")
+        print(f"**Status:** {result['status_field']}")
+        print()
+        print(result['content'])
+    else:
+        print(f"Error: {result['message']}")
         sys.exit(1)
-    if not token:
-        print("Error: CONFLUENCE_API_TOKEN environment variable not set")
-        sys.exit(1)
-    
-    # Parse the URL to get base URL and page ID
-    parsed_url = urlparse(args.url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    page_id = extract_page_id_from_url(args.url)
-    
-    # Test authentication first
-    if DEBUG_MODE:
-        print("Testing authentication...")
-    if not test_auth(base_url, email, token):
-        print("Authentication failed. Please check your credentials.")
-        sys.exit(1)
-    
-    # Fetch content
-    content = get_confluence_content(base_url, page_id, email, token)
-    
-    # Create auth header for image downloads
-    auth_string = f"{email}:{token}"
-    encoded_auth = base64.b64encode(auth_string.encode()).decode()
-    auth_header = f'Basic {encoded_auth}'
-    
-    # Print header info
-    print(f"# {content['title']}")
-    print(f"**Type:** {content['type']}")
-    print(f"**Status:** {content['status']}")
-    print()
-    
-    # Process content with image extraction
-    processed_content = process_confluence_content(content, base_url, auth_header)
-    print(processed_content)
 
 if __name__ == '__main__':
-    main()
+    # Check if running in agent mode (JSON input) or legacy mode (URL input)
+    if len(sys.argv) >= 2 and sys.argv[1].startswith('{'):
+        # Agent mode: JSON input
+        try:
+            params = json.loads(sys.argv[1])
+            result = run(params)
+            print(json.dumps(result, indent=2))
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": "error", "message": f"Invalid JSON: {e}"}, indent=2))
+            sys.exit(1)
+    elif len(sys.argv) >= 2:
+        # Legacy mode: URL input
+        legacy_main()
+    else:
+        # Show usage for both modes
+        print("Usage:")
+        print("  Agent mode:  python confluence_reader.py '{\"url\": \"https://...\", \"debug\": true}'")
+        print("  Legacy mode: python confluence_reader.py https://confluence-url --debug")
+        print()
+        print("Agent description:")
+        desc = describe()
+        print(json.dumps(desc, indent=2))
+        sys.exit(1)

@@ -1,0 +1,77 @@
+{
+  "examples": [
+    {
+      "name": "basic_extraction",
+      "description": "Extract a Confluence page with minimal parameters",
+      "params": {
+        "url": "https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/123456/Example+Page",
+        "debug": false
+      }
+    },
+    {
+      "name": "debug_mode",
+      "description": "Extract with detailed debugging information",
+      "params": {
+        "url": "https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/123456/Example+Page",
+        "debug": true
+      }
+    },
+    {
+      "name": "with_credentials",
+      "description": "Extract using credentials provided in parameters",
+      "params": {
+        "url": "https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/123456/Example+Page",
+        "email": "your.email@example.com",
+        "api_token": "your_api_token_here",
+        "debug": false
+      }
+    },
+    {
+      "name": "page_with_tables",
+      "description": "Extract a page containing table images for OCR processing",
+      "params": {
+        "url": "https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/789012/Financial+Report",
+        "debug": true
+      }
+    }
+  ],
+  "test_commands": [
+    {
+      "description": "Test agent mode with basic parameters",
+      "command": "python confluence_reader.py '{\"url\": \"https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/123456/Example\", \"debug\": false}'"
+    },
+    {
+      "description": "Test legacy mode (backward compatibility)",
+      "command": "python confluence_reader.py https://cosylab.atlassian.net/wiki/spaces/SPACE/pages/123456/Example --debug"
+    },
+    {
+      "description": "Show agent description",
+      "command": "python confluence_reader.py"
+    }
+  ],
+  "expected_output_structure": {
+    "success": {
+      "status": "success",
+      "title": "Page Title",
+      "type": "page",
+      "status_field": "current",
+      "content": "Clean LLM-optimized text content...",
+      "page_id": "123456",
+      "url": "https://..."
+    },
+    "error": {
+      "status": "error",
+      "message": "Error description"
+    }
+  },
+  "environment_variables": {
+    "required": [
+      "CONFLUENCE_EMAIL",
+      "CONFLUENCE_API_TOKEN"
+    ],
+    "setup_commands": [
+      "export CONFLUENCE_EMAIL=\"your.email@example.com\"",
+      "export CONFLUENCE_API_TOKEN=\"your_api_token_here\""
+    ]
+  }
+}

@@ -1,15 +1,28 @@
 # Confluence to LLM Context Converter
 
-A Python tool that extracts Confluence pages and converts them into clean, LLM-optimized text format. It handles both text content and embedded images (particularly tables) using OCR technology.
+A Python agent that extracts Confluence pages and converts them into clean, LLM-optimized text format. It handles both text content and embedded images (particularly tables) using OCR technology.
+
+**Key Features:**
+- 🤖 **Agent Interface**: Discoverable by orchestration frameworks
+- 🔄 **Dual Mode**: Both JSON agent mode and legacy CLI
+- 📄 **Smart Extraction**: Text + OCR for embedded table images
+- 🎯 **LLM Optimized**: Clean output format for AI consumption
 
 ## Features
 
+### Core Capabilities
 - **Text Extraction**: Converts Confluence HTML to clean, readable text
 - **Image Processing**: Downloads and processes embedded images using OCR
 - **Table Recognition**: Extracts structured data from table images
 - **LLM Optimization**: Outputs text optimized for Large Language Model consumption
 - **Authentication**: Supports Confluence Cloud API authentication
 - **Debug Mode**: Toggle detailed debugging information
+
+### Agent Framework Support
+- **Discoverable Interface**: `describe()` function for agent registration
+- **Structured I/O**: JSON input parameters with schema validation
+- **Dual Execution**: Agent mode (JSON) + Legacy CLI mode
+- **Error Handling**: Structured error responses for automation
 
 ## Installation
 
@@ -56,29 +69,70 @@ export CONFLUENCE_API_TOKEN="your_api_token_here"
 
 ## Usage
 
-### Basic Usage
+### Agent Mode (Recommended)
 
+**Basic Extraction:**
+```bash
+python confluence_reader.py '{"url": "https://domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"}'
+```
+
+**With Debug Output:**
+```bash
+python confluence_reader.py '{"url": "https://...", "debug": true}'
+```
+
+**With Inline Credentials:**
+```bash
+python confluence_reader.py '{"url": "https://...", "email": "user@example.com", "api_token": "token"}'
+```
+
+### Legacy CLI Mode (Backward Compatible)
+
+**Basic Usage:**
 ```bash
 python confluence_reader.py "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
 ```
 
-### With Debug Output
-
+**With Debug:**
 ```bash
 python confluence_reader.py --debug "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
 ```
 
-### Help
+### Agent Discovery
 
+**Show Agent Description:**
 ```bash
-python confluence_reader.py --help
+python confluence_reader.py
 ```
 
 ## Output Format
 
-The tool generates LLM-optimized output with:
+### Agent Mode Output (JSON)
 
-### Clean Text Content
+**Success Response:**
+```json
+{
+  "status": "success",
+  "title": "Page Title",
+  "type": "page",
+  "status_field": "current",
+  "content": "Clean LLM-optimized text content...",
+  "page_id": "123456",
+  "url": "https://..."
+}
+```
+
+**Error Response:**
+```json
+{
+  "status": "error",
+  "message": "Authentication failed. Please check your credentials."
+}
+```
+
+### Legacy Mode Output (Text)
+
+**Clean Text Content:**
 ```
 # Page Title
 **Type:** page
@@ -87,7 +141,7 @@ The tool generates LLM-optimized output with:
 Clean page content without formatting noise...
 ```
 
-### Extracted Table Data
+**Extracted Table Data:**
 ```
 EXTRACTED IMAGES AND TABLES:
 
@@ -120,8 +174,16 @@ Debug mode provides detailed information about:
 
 ## Architecture
 
+### Agent Interface
 ```
 confluence_reader.py
+├── describe() → Agent metadata for discovery
+├── run(params) → Main execution with JSON I/O
+└── __main__ → Dual-mode CLI (JSON/Legacy)
+```
+
+### Processing Pipeline
+```
 ├── Authentication (Basic Auth with email + API token)
 ├── Content Extraction (Confluence REST API)
 ├── HTML Processing (BeautifulSoup)
@@ -138,8 +200,25 @@ confluence_reader.py
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `CONFLUENCE_EMAIL` | Your Atlassian account email | Yes |
-| `CONFLUENCE_API_TOKEN` | Confluence API token | Yes |
+| `CONFLUENCE_EMAIL` | Your Atlassian account email | Yes* |
+| `CONFLUENCE_API_TOKEN` | Confluence API token | Yes* |
+
+*Can be provided via environment variables OR as parameters in agent mode
+
+### Agent Parameters Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {"type": "string", "description": "Confluence page URL"},
+    "email": {"type": "string", "description": "Email (optional if env var set)"},
+    "api_token": {"type": "string", "description": "API token (optional if env var set)"},
+    "debug": {"type": "boolean", "description": "Enable debug output", "default": false}
+  },
+  "required": ["url"]
+}
+```
 
 ### URL Formats Supported
 
@@ -154,10 +233,22 @@ confluence_reader.py
 python test_ocr.py
 ```
 
-### Test with Debug Mode
+### Test Agent Mode
+```bash
+# Basic test
+python confluence_reader.py '{"url": "https://...", "debug": true}'
+
+# Test with credentials
+python confluence_reader.py '{"url": "https://...", "email": "test@example.com", "api_token": "token"}'
+```
+
+### Test Legacy Mode
 ```bash
 python confluence_reader.py --debug "your_confluence_url"
 ```
+
+### Test Examples
+See `test.json` for complete examples and test cases.
 
 ## Troubleshooting
 
@@ -187,6 +278,35 @@ python confluence_reader.py --debug "your_confluence_url"
 When using `--debug` mode, the following files are created:
 - `debug_html.html` - Raw Confluence storage format
 - `test_image.png` - OCR test image (when running `test_ocr.py`)
+
+## Agent Integration
+
+### Orchestrator Usage
+
+```python
+# Import and discover agent
+from confluence_reader import describe, run
+
+# Get agent metadata
+agent_info = describe()
+print(f"Agent: {agent_info['name']}")
+print(f"Capabilities: {agent_info['capabilities']}")
+
+# Execute agent
+result = run({
+    "url": "https://domain.atlassian.net/wiki/pages/123456",
+    "debug": False
+})
+
+if result["status"] == "success":
+    content = result["content"]
+    # Use content for LLM processing
+else:
+    print(f"Error: {result['message']}")
+```
+
+### Integration Examples
+See `test.json` for complete integration examples.
 
 ## Dependencies
 
