@@ -1,0 +1,5 @@
+requests==2.31.0
+html2text==2020.1.16
+beautifulsoup4==4.12.2
+pillow==10.0.1
+pytesseract==0.3.10
