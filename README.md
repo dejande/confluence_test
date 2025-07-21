@@ -6,6 +6,8 @@ A Python agent that extracts Confluence pages and converts them into clean, LLM-
 - 🤖 **Agent Interface**: Discoverable by orchestration frameworks
 - 🔄 **Dual Mode**: Both JSON agent mode and legacy CLI
 - 📄 **Smart Extraction**: Text + OCR for embedded table images
+- 💬 **Complete Context**: Page comments with nested replies and discussions
+- 📁 **File Output**: Optional content export to files
 - 🎯 **LLM Optimized**: Clean output format for AI consumption
 
 ## Features
@@ -14,6 +16,9 @@ A Python agent that extracts Confluence pages and converts them into clean, LLM-
 - **Text Extraction**: Converts Confluence HTML to clean, readable text
 - **Image Processing**: Downloads and processes embedded images using OCR
 - **Table Recognition**: Extracts structured data from table images
+- **Comments & Discussions**: Fetches page comments with nested replies and threading
+- **Content Context**: Shows what content each comment relates to
+- **File Export**: Optional content saving to local files
 - **LLM Optimization**: Outputs text optimized for Large Language Model consumption
 - **Authentication**: Supports Confluence Cloud API authentication
 - **Debug Mode**: Toggle detailed debugging information
@@ -81,9 +86,14 @@ python confluence_reader.py '{"url": "https://domain.atlassian.net/wiki/spaces/S
 python confluence_reader.py '{"url": "https://...", "debug": true}'
 ```
 
-**With Inline Credentials:**
+**With Comments and File Output:**
 ```bash
-python confluence_reader.py '{"url": "https://...", "email": "user@example.com", "api_token": "token"}'
+python confluence_reader.py '{"url": "https://...", "include_comments": true, "output_file": "page_content.txt"}'
+```
+
+**Full Example:**
+```bash
+python confluence_reader.py '{"url": "https://...", "email": "user@example.com", "api_token": "token", "include_comments": true, "debug": true, "output_file": "confluence_page.txt"}'
 ```
 
 ### Legacy CLI Mode (Backward Compatible)
@@ -93,9 +103,14 @@ python confluence_reader.py '{"url": "https://...", "email": "user@example.com",
 python confluence_reader.py "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
 ```
 
-**With Debug:**
+**With Comments and File Output:**
 ```bash
-python confluence_reader.py --debug "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
+python confluence_reader.py --comments --output page_content.txt "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
+```
+
+**Full Legacy Example:**
+```bash
+python confluence_reader.py --debug --comments --output confluence_page.txt "https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title"
 ```
 
 ### Agent Discovery
@@ -118,7 +133,8 @@ python confluence_reader.py
   "status_field": "current",
   "content": "Clean LLM-optimized text content...",
   "page_id": "123456",
-  "url": "https://..."
+  "url": "https://...",
+  "output_file": "page_content.txt"
 }
 ```
 
@@ -153,12 +169,35 @@ Row 2: TeamB 2.8 195K 62K 40%
 Row 3: TeamC 3.1 280K 38K 70%
 ```
 
+**Comments and Discussions:**
+```
+PAGE COMMENTS AND DISCUSSIONS:
+
+--- COMMENT 1 ---
+Author: John Smith
+Date: 2024-01-15T10:30:00.000Z
+Commenting on: Main page content
+Content: Great analysis! Could we add more Q4 data?
+
+  --- REPLY 1 ---
+    Author: Jane Doe
+    Date: 2024-01-15T11:45:00.000Z
+    Content: I'll update the report with Q4 metrics today.
+
+  --- REPLY 2 ---
+    Author: Bob Wilson
+    Date: 2024-01-15T14:20:00.000Z
+    Content: Also suggest adding regional breakdown.
+```
+
 ## Supported Content Types
 
 - **Text Content**: Paragraphs, headers, lists, formatted text
 - **Images**: PNG, JPG, GIF formats  
 - **Tables**: Table images converted to structured text
 - **Attachments**: Confluence file attachments with image content
+- **Comments**: Page-level comments with nested reply threads
+- **Discussions**: Complete conversation contexts and author information
 - **Confluence Elements**: Native Confluence storage format (`ac:image`, `ri:attachment`)
 
 ## Debug Mode
@@ -168,8 +207,10 @@ Debug mode provides detailed information about:
 - Authentication status
 - HTML content analysis  
 - Image detection and processing
+- Comments and reply fetching progress
 - Download progress and file sizes
 - OCR processing results
+- File output operations
 - Raw HTML saved to `debug_html.html`
 
 ## Architecture
@@ -186,11 +227,13 @@ confluence_reader.py
 ```
 ├── Authentication (Basic Auth with email + API token)
 ├── Content Extraction (Confluence REST API)
+├── Comments Extraction (Nested replies + threading)
 ├── HTML Processing (BeautifulSoup)
 ├── Image Detection (Multiple tag types)
 ├── Image Download (Authenticated requests)
 ├── OCR Processing (Tesseract + PIL)
 ├── Text Cleaning (html2text + custom processing)
+├── File Export (Optional content saving)
 └── LLM Optimization (Structured output format)
 ```
 
@@ -214,7 +257,9 @@ confluence_reader.py
     "url": {"type": "string", "description": "Confluence page URL"},
     "email": {"type": "string", "description": "Email (optional if env var set)"},
     "api_token": {"type": "string", "description": "API token (optional if env var set)"},
-    "debug": {"type": "boolean", "description": "Enable debug output", "default": false}
+    "debug": {"type": "boolean", "description": "Enable debug output", "default": false},
+    "include_comments": {"type": "boolean", "description": "Include page comments and replies", "default": false},
+    "output_file": {"type": "string", "description": "Optional file path to save content"}
   },
   "required": ["url"]
 }
@@ -238,13 +283,20 @@ python test_ocr.py
 # Basic test
 python confluence_reader.py '{"url": "https://...", "debug": true}'
 
-# Test with credentials
-python confluence_reader.py '{"url": "https://...", "email": "test@example.com", "api_token": "token"}'
+# Test with comments
+python confluence_reader.py '{"url": "https://...", "include_comments": true, "debug": true}'
+
+# Test with file output
+python confluence_reader.py '{"url": "https://...", "output_file": "test_output.txt"}'
 ```
 
 ### Test Legacy Mode
 ```bash
+# Basic test
 python confluence_reader.py --debug "your_confluence_url"
+
+# Test with comments and file output
+python confluence_reader.py --comments --output test_output.txt "your_confluence_url"
 ```
 
 ### Test Examples

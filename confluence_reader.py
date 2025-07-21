@@ -46,6 +46,15 @@ def describe():
                     "type": "boolean",
                     "description": "Enable debug output with detailed processing information",
                     "default": False
+                },
+                "output_file": {
+                    "type": "string",
+                    "description": "Optional file path to write the extracted content (in addition to returning it)"
+                },
+                "include_comments": {
+                    "type": "boolean",
+                    "description": "Include page comments in the extracted content",
+                    "default": False
                 }
             },
             "required": ["url"]
@@ -108,6 +117,158 @@ def get_confluence_content(base_url, page_id, email, token):
         return response.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"Error fetching content: {e}")
+
+def get_comment_replies(base_url, comment_id, email, token):
+    """Fetch replies to a specific comment"""
+    api_url = f"{base_url}/wiki/rest/api/content/{comment_id}/child/comment?expand=body.storage,version"
+    
+    auth_string = f"{email}:{token}"
+    encoded_auth = base64.b64encode(auth_string.encode()).decode()
+    
+    headers = {
+        'Authorization': f'Basic {encoded_auth}',
+        'Accept': 'application/json'
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers)
+        response.raise_for_status()
+        return response.json().get('results', [])
+    except requests.exceptions.RequestException as e:
+        debug_print(f"Error fetching replies for comment {comment_id}: {e}")
+        return []
+
+def get_page_comments(base_url, page_id, email, token):
+    """Fetch comments from Confluence page via API with nested replies"""
+    api_url = f"{base_url}/wiki/rest/api/content/{page_id}/child/comment?expand=body.storage,version,ancestors"
+    
+    auth_string = f"{email}:{token}"
+    encoded_auth = base64.b64encode(auth_string.encode()).decode()
+    
+    headers = {
+        'Authorization': f'Basic {encoded_auth}',
+        'Accept': 'application/json'
+    }
+    
+    debug_print(f"Fetching comments: {api_url}")
+    
+    try:
+        response = requests.get(api_url, headers=headers)
+        debug_print(f"Comments response status: {response.status_code}")
+        
+        response.raise_for_status()
+        comments_data = response.json()
+        
+        # Fetch replies for each top-level comment
+        all_comments = []
+        for comment in comments_data.get('results', []):
+            all_comments.append(comment)
+            
+            # Get replies to this comment
+            comment_id = comment.get('id')
+            if comment_id:
+                replies = get_comment_replies(base_url, comment_id, email, token)
+                for reply in replies:
+                    reply['is_reply'] = True
+                    reply['parent_id'] = comment_id
+                    all_comments.append(reply)
+        
+        return {"results": all_comments}
+        
+    except requests.exceptions.RequestException as e:
+        debug_print(f"Error fetching comments: {e}")
+        return {"results": []}  # Return empty comments on error
+
+def get_commented_content(comment, page_content):
+    """Try to extract what content the comment is bound to"""
+    # Check if comment has ancestors (for inline comments)
+    ancestors = comment.get('ancestors', [])
+    if ancestors:
+        # Get the immediate parent content
+        parent = ancestors[-1] if ancestors else None
+        if parent:
+            parent_title = parent.get('title', '')
+            if parent_title:
+                return f"Commenting on: {parent_title}"
+    
+    # For page-level comments, return the page context
+    return "Commenting on: Main page content"
+
+def process_comments(comments_data):
+    """Process comments data into clean text with nested structure"""
+    comments = comments_data.get('results', [])
+    if not comments:
+        return ""
+    
+    debug_print(f"Processing {len(comments)} comments (including replies)")
+    
+    comments_text = "\n\nPAGE COMMENTS AND DISCUSSIONS:\n\n"
+    
+    comment_counter = 0
+    reply_counter = 0
+    
+    for comment in comments:
+        # Check if this is a reply
+        is_reply = comment.get('is_reply', False)
+        
+        if is_reply:
+            reply_counter += 1
+            prefix = f"  REPLY {reply_counter}"
+            indent = "    "
+        else:
+            comment_counter += 1
+            prefix = f"COMMENT {comment_counter}"
+            indent = ""
+            # Reset reply counter for each new top-level comment
+            if comment_counter > 1:
+                reply_counter = 0
+        
+        # Get comment metadata
+        author = comment.get('version', {}).get('by', {}).get('displayName', 'Unknown')
+        created = comment.get('version', {}).get('when', 'Unknown time')
+        
+        # Get what content this comment is bound to
+        content_context = get_commented_content(comment, None)
+        
+        # Get comment body
+        body = comment.get('body', {}).get('storage', {}).get('value', '')
+        
+        if body:
+            # Clean HTML content from comment
+            h = html2text.HTML2Text()
+            h.ignore_links = True
+            h.ignore_images = True
+            h.ignore_emphasis = False
+            h.body_width = 0
+            h.single_line_break = True
+            h.mark_code = False
+            h.escape_all = False
+            h.unicode_snob = True
+            
+            clean_comment = h.handle(body).strip()
+            
+            # Remove excessive formatting
+            lines = clean_comment.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                line = line.strip()
+                if line:
+                    line = line.replace('**', '').replace('*', '')
+                    line = line.replace('##', '').replace('#', '')
+                    line = line.replace('  ', ' ')
+                    cleaned_lines.append(line)
+            
+            clean_comment = ' '.join(cleaned_lines)
+            
+            # Format comment with proper indentation
+            comments_text += f"{indent}--- {prefix} ---\n"
+            comments_text += f"{indent}Author: {author}\n"
+            comments_text += f"{indent}Date: {created}\n"
+            if not is_reply:  # Only show context for top-level comments
+                comments_text += f"{indent}{content_context}\n"
+            comments_text += f"{indent}Content: {clean_comment}\n\n"
+    
+    return comments_text
 
 def download_image(url, auth_header):
     """Download image from URL"""
@@ -303,6 +464,30 @@ def run(params):
         # Process content
         processed_content = process_confluence_content(content, base_url, auth_header)
         
+        # Fetch and append comments if requested
+        if params.get('include_comments', False):
+            debug_print("Fetching page comments...")
+            comments_data = get_page_comments(base_url, page_id, email, token)
+            comments_text = process_comments(comments_data)
+            if comments_text:
+                processed_content += comments_text
+                debug_print(f"Added {len(comments_data.get('results', []))} comments to content")
+        
+        # Write to file if output_file is specified
+        output_file = params.get('output_file')
+        if output_file:
+            try:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(f"# {content['title']}\n")
+                    f.write(f"**Type:** {content['type']}\n")
+                    f.write(f"**Status:** {content['status']}\n")
+                    f.write(f"**URL:** {url}\n")
+                    f.write(f"**Page ID:** {content['id']}\n\n")
+                    f.write(processed_content)
+                debug_print(f"Content written to file: {output_file}")
+            except Exception as e:
+                debug_print(f"Failed to write to file {output_file}: {e}")
+        
         return {
             "status": "success",
             "title": content['title'],
@@ -310,7 +495,8 @@ def run(params):
             "status_field": content['status'],
             "content": processed_content,
             "page_id": content['id'],
-            "url": url
+            "url": url,
+            "output_file": output_file if output_file else None
         }
         
     except Exception as e:
@@ -330,14 +516,20 @@ def legacy_main():
     parser = argparse.ArgumentParser(description='Fetch and print Confluence page content')
     parser.add_argument('url', help='Confluence page URL')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    parser.add_argument('--output', '-o', help='Write content to file')
+    parser.add_argument('--comments', action='store_true', help='Include page comments')
     
     args = parser.parse_args()
     
     # Convert to new format and run
     params = {
         'url': args.url,
-        'debug': args.debug
+        'debug': args.debug,
+        'include_comments': args.comments
     }
+    
+    if args.output:
+        params['output_file'] = args.output
     
     result = run(params)
     
