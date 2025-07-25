@@ -35,12 +35,8 @@ def example_standalone_usage():
     # Create the tool
     confluence_tool = create_confluence_tool()
     
-    # Use the tool directly
-    result = confluence_tool._run(
-        url="https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page",
-        include_comments=True,
-        debug=False
-    )
+    # Use the tool directly - with JSON config
+    result = confluence_tool._run('{"url": "https://cosylab.atlassian.net/wiki/spaces/CBK/pages/103579649/Services+-+June+FY25", "include_comments": true}')
     
     print("Extracted Content:")
     print(result[:500] + "..." if len(result) > 500 else result)
@@ -59,24 +55,25 @@ def example_agent_usage():
         print("❌ OPENAI_API_KEY not set. Skipping agent example.")
         return
     
-    # Initialize LLM (replace with your preferred model)
-    llm = OpenAI(temperature=0)  # Requires OPENAI_API_KEY
+    # Initialize LLM with GPT-4o-mini (much larger context window)
+    llm = OpenAI(model="gpt-4o-mini", temperature=0)  # Requires OPENAI_API_KEY
     
     # Create tools list
     tools = [create_confluence_tool()]
     
-    # Initialize agent
+    # Initialize agent with error handling
     agent = initialize_agent(
         tools=tools,
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True
+        verbose=True,
+        handle_parsing_errors=True
     )
     
     # Use the agent
     query = """
     Extract the content from this Confluence page including comments: 
-    https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page
+    https://cosylab.atlassian.net/wiki/spaces/CBK/pages/103579649/Services+-+June+FY25
     Then summarize the main points and any key discussions from the comments.
     """
     
@@ -123,15 +120,12 @@ def example_chain_usage():
         """
     )
     
-    # Create LLM chain
-    llm = OpenAI(temperature=0)
+    # Create LLM chain with GPT-4o-mini
+    llm = OpenAI(model="gpt-4o-mini", temperature=0)
     chain = LLMChain(llm=llm, prompt=prompt)
     
     # Extract content first
-    confluence_content = confluence_tool._run(
-        url="https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page",
-        include_comments=True
-    )
+    confluence_content = confluence_tool._run("https://cosylab.atlassian.net/wiki/spaces/CBK/pages/103579649/Services+-+June+FY25")
     
     # Run the chain
     try:
@@ -179,10 +173,10 @@ if __name__ == "__main__":
     example_tool_schema()
     
     # Uncomment these if you have the required environment variables set:
-    # example_standalone_usage()
+    example_standalone_usage()
     
     # Uncomment if you have OpenAI API key:
-    # example_agent_usage()
-    # example_chain_usage()
+    example_agent_usage()
+    example_chain_usage()
     
     print("Examples completed!")

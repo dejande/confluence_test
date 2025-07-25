@@ -11,12 +11,7 @@ from confluence_reader import run as confluence_run, describe as confluence_desc
 
 class ConfluenceExtractorInput(BaseModel):
     """Input schema for Confluence Extractor tool."""
-    url: str = Field(description="Confluence page URL to extract content from")
-    include_comments: bool = Field(default=True, description="Include page comments and nested replies")
-    debug: bool = Field(default=False, description="Enable debug output")
-    output_file: Optional[str] = Field(default=None, description="Optional file path to save extracted content")
-    email: Optional[str] = Field(default=None, description="Confluence email (optional if env var set)")
-    api_token: Optional[str] = Field(default=None, description="Confluence API token (optional if env var set)")
+    query: str = Field(description="Confluence page URL or JSON config. Examples: 'https://domain.atlassian.net/wiki/pages/123456' or '{\"url\": \"https://...\", \"include_comments\": true}'")
 
 
 class ConfluenceExtractorTool(BaseTool):
@@ -31,45 +26,35 @@ class ConfluenceExtractorTool(BaseTool):
     """
     
     name: str = "confluence_extractor"
-    description: str = "Extract Confluence pages with text, images, tables, and comments into LLM-optimized format. Supports OCR for table images and complete comment threading."
+    description: str = "Extract Confluence pages with text, images, tables, and comments into LLM-optimized format. Input can be a URL or JSON config with options."
     args_schema: Type[BaseModel] = ConfluenceExtractorInput
     return_direct: bool = False
 
-    def _run(self, 
-             url: str,
-             include_comments: bool = False,
-             debug: bool = False,
-             output_file: Optional[str] = None,
-             email: Optional[str] = None,
-             api_token: Optional[str] = None) -> str:
+    def _run(self, query: str) -> str:
         """
         Execute the Confluence extraction.
         
         Args:
-            url: Confluence page URL
-            include_comments: Whether to include page comments and replies
-            debug: Enable debug output
-            output_file: Optional file path to save content
-            email: Confluence email (optional if env var set)
-            api_token: Confluence API token (optional if env var set)
+            query: Confluence page URL or JSON config string
             
         Returns:
             Extracted content as LLM-optimized text string
         """
         try:
-            # Prepare parameters for the extraction function
-            params = {
-                'url': url,
-                'include_comments': include_comments,
-                'debug': debug
-            }
-            
-            if output_file:
-                params['output_file'] = output_file
-            if email:
-                params['email'] = email
-            if api_token:
-                params['api_token'] = api_token
+            # Parse input - could be URL or JSON config
+            if query.strip().startswith('{'):
+                # JSON config
+                try:
+                    params = json.loads(query)
+                except json.JSONDecodeError:
+                    return f"Error: Invalid JSON config: {query}"
+            else:
+                # Simple URL
+                params = {
+                    'url': query.strip(),
+                    'include_comments': True,  # Default to including comments for LLM use
+                    'debug': False
+                }
             
             # Run the extraction
             result = confluence_run(params)
@@ -91,15 +76,9 @@ class ConfluenceExtractorTool(BaseTool):
         except Exception as e:
             return f"Error in Confluence extraction: {str(e)}"
 
-    async def _arun(self, 
-                    url: str,
-                    include_comments: bool = False,
-                    debug: bool = False,
-                    output_file: Optional[str] = None,
-                    email: Optional[str] = None,
-                    api_token: Optional[str] = None) -> str:
+    async def _arun(self, query: str) -> str:
         """Async version of the extraction (currently just calls sync version)."""
-        return self._run(url, include_comments, debug, output_file, email, api_token)
+        return self._run(query)
 
     def get_params_schema(self) -> Dict[str, Any]:
         """Get the parameter schema for the tool."""
