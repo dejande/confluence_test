@@ -1,5 +1,11 @@
-requests==2.31.0
-html2text==2020.1.16
-beautifulsoup4==4.12.2
-pillow==10.0.1
-pytesseract==0.3.10
+requests>=2.25.0
+html2text>=2020.1.16
+beautifulsoup4>=4.12.0
+pillow>=10.3.0
+pytesseract>=0.3.10
+
+# LangChain integration (optional)
+langchain>=0.1.0
+langchain-community>=0.0.10
+langchain-openai>=0.0.5
+pydantic>=2.0.0
