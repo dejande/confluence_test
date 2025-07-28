@@ -337,6 +337,52 @@ def process_confluence_content(content, base_url, auth_header):
     
     soup = BeautifulSoup(html_content, 'html.parser')
     
+    # Process Confluence-specific date elements before general processing
+    # Handle <time> tags (common for dates)
+    time_elements = soup.find_all('time')
+    debug_print(f"Found {len(time_elements)} time elements")
+    for time_elem in time_elements:
+        # Replace time element with readable date text
+        datetime_attr = time_elem.get('datetime') or time_elem.get('title')
+        display_text = time_elem.get_text(strip=True)
+        if display_text:
+            time_elem.replace_with(display_text)
+        elif datetime_attr:
+            time_elem.replace_with(datetime_attr)
+    
+    # Handle Confluence date macros (ac:structured-macro with name="date")
+    date_macros = soup.find_all('ac:structured-macro', {'ac:name': 'date'})
+    debug_print(f"Found {len(date_macros)} date macros")
+    for date_macro in date_macros:
+        # Look for date parameter
+        date_param = date_macro.find('ac:parameter', {'ac:name': 'date'})
+        if date_param:
+            date_text = date_param.get_text(strip=True)
+            date_macro.replace_with(f"Date: {date_text}")
+        else:
+            # Fallback to any text content
+            date_text = date_macro.get_text(strip=True)
+            if date_text:
+                date_macro.replace_with(date_text)
+    
+    # Process headers for better LLM structure understanding
+    # Convert h1-h6 tags to markdown headers
+    header_tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+    header_count = 0
+    for i, tag in enumerate(header_tags, 1):
+        headers = soup.find_all(tag)
+        header_count += len(headers)
+        for header in headers:
+            header_text = header.get_text(strip=True)
+            if header_text:
+                # Create markdown header with appropriate number of #
+                markdown_header = '#' * i + ' ' + header_text
+                header.replace_with(f"\n{markdown_header}\n")
+    
+    debug_print(f"Processed {header_count} headers for markdown formatting")
+    
+    # Lists will be processed by html2text as plain text
+    
     # Debug: Show all image tags found
     images = soup.find_all('img')
     debug_print(f"Found {len(images)} image tags")
@@ -400,22 +446,48 @@ def process_confluence_content(content, base_url, auth_header):
     h.mark_code = False
     h.escape_all = False
     h.unicode_snob = True
+    h.escape_snob = False  # Don't escape markdown characters
     
     text_content = h.handle(str(soup))
     
-    # Clean up text
+    # Post-process to fix html2text issues
+    # Remove backslash escaping from markdown characters
+    text_content = text_content.replace('\\-', '-')
+    text_content = text_content.replace('\\#', '#')
+    text_content = text_content.replace('\\*', '*')
+    text_content = text_content.replace('\\_', '_')
+    
+    # Clean up text while preserving markdown headers and lists
     lines = text_content.split('\n')
     cleaned_lines = []
     
     for line in lines:
         line = line.strip()
         if line:
-            line = line.replace('**', '').replace('*', '')
-            line = line.replace('##', '').replace('#', '')
-            line = line.replace('  ', ' ')
-            cleaned_lines.append(line)
+            # Check if this is a markdown header (starts with # and space, not just #)
+            if line.startswith('# ') or line.startswith('## ') or line.startswith('### ') or line.startswith('#### ') or line.startswith('##### ') or line.startswith('###### '):
+                # Keep headers as separate lines for proper structure
+                # Always add spacing before headers to separate from previous content
+                if cleaned_lines and cleaned_lines[-1] != '':  # Add blank line if last line wasn't blank
+                    cleaned_lines.append('')
+                cleaned_lines.append(line)
+                cleaned_lines.append('')  # Add spacing after headers
+            # Check if this is a markdown list item (starts with -)
+            elif line.startswith('- '):
+                # Keep list items as separate lines
+                cleaned_lines.append(line)
+            else:
+                # Clean other formatting but preserve content
+                line = line.replace('**', '').replace('*', '')
+                # Don't remove # from headers, only from inline text
+                if not any(cleaned_line.startswith('#') for cleaned_line in cleaned_lines[-3:]):
+                    line = line.replace('#', '')
+                line = line.replace('  ', ' ')
+                if line:  # Only add non-empty lines
+                    cleaned_lines.append(line)
     
-    clean_text = ' '.join(cleaned_lines)
+    # Join with newlines to preserve header and list structure
+    clean_text = '\n'.join(cleaned_lines)
     
     # Combine text and image content
     final_content = clean_text
